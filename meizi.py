@@ -6,11 +6,14 @@ from queue import Queue
 import requests
 from bs4 import BeautifulSoup
 
+DIR = 'pic'
 headers = {
     "user-agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.90 Safari/537.36"}
 queue = Queue()
 for i in range(1, 21):  # 下载第一页到20页图片
     queue.put(i)
+
+lock = threading.Lock()
 
 
 def download_page(url):
@@ -26,8 +29,8 @@ def get_pic_list(pgnum, html):
         pic_link = img_tag.get('data-original')  # 拿到图片的具体 url
         print('下载第{}页，图片{}'.format(pgnum, pic_link))
         r = requests.get(pic_link, headers=headers)  # 下载图片，之后保存到文件
-        create_dir('pic/{}'.format(pgnum))
-        with open('pic/{}/{}'.format(pgnum, pic_link.split('/')[-1]), 'wb') as f:
+        create_dir('{}/{}'.format(DIR, pgnum))
+        with open('{}/{}/{}'.format(DIR, pgnum, pic_link.split('/')[-1]), 'wb') as f:
             f.write(r.content)
             time.sleep(1)  # 休息一下，不要给网站太大压力，避免被封
 
@@ -39,7 +42,12 @@ def create_dir(name):
 
 def execute():
     while not queue.empty():
-        cur_page = queue.get()
+        lock.acquire()  # 先要获取锁
+        try:
+            cur_page = queue.get()
+        finally:
+            # 改完了一定要释放锁:
+            lock.release()
         print('{}正在下载{}页'.format(threading.current_thread().name, cur_page))
         url = 'https://www.mzitu.com/zipai/comment-page-{}/'.format(cur_page)
         page_html = download_page(url)
@@ -47,15 +55,16 @@ def execute():
 
 
 def main():
-    create_dir('pic')
+    start_time = time.time()
+    create_dir(DIR)
     threads = []
-    while len(threads) < 5:  # 最大线程数设置为 5
+    while len(threads) < 20:  # 最大线程数设置为 20
         thread = threading.Thread(target=execute)
         thread.start()
         threads.append(thread)
     for thread in threads:
         thread.join()
-    print("下载完成")
+    print('下载完成,cost', time.time() - start_time)
 
 
 if __name__ == '__main__':
